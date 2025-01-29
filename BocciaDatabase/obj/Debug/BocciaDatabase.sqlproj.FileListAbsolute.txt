@@ -1,0 +1,6 @@
+C:\Code\BocciaSolution\BocciaDatabase\bin\Debug\BocciaDatabase.dacpac
+C:\Code\BocciaSolution\BocciaDatabase\bin\Debug\BocciaDatabase.dll
+C:\Code\BocciaSolution\BocciaDatabase\bin\Debug\BocciaDatabase.pdb
+C:\Code\BocciaSolution\BocciaDatabase\obj\Debug\BocciaDatabase.sqlproj.AssemblyReference.cache
+C:\Code\BocciaSolution\BocciaDatabase\obj\Debug\BocciaDatabase.dll
+C:\Code\BocciaSolution\BocciaDatabase\obj\Debug\BocciaDatabase.pdb
