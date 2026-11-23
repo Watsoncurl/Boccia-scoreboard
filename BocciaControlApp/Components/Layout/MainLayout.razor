@@ -1,9 +1,37 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ScoreboardConnection Connection
 
-@Body
+<div class="app">
+    <nav class="topbar">
+        <a class="brand" href="">Boccia · Control</a>
+        <NavLink href="" Match="NavLinkMatch.All">Partidos</NavLink>
+        <NavLink href="matches/new">Nuevo partido</NavLink>
+        <NavLink href="athletes">Deportistas</NavLink>
+        <span class="spacer"></span>
+        <ConnectionDot Connected="Connection.IsConnected" />
+    </nav>
+
+    <main class="content">
+        @Body
+    </main>
+</div>
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
+    Ocurrió un error inesperado.
+    <a href="." class="reload">Recargar</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    // El indicador de conexión del menú se actualiza en todas las páginas.
+    protected override void OnInitialized()
+    {
+        Connection.ConnectionChanged += OnConnectionChanged;
+        Connection.EnsureStarted();
+    }
+
+    private Task OnConnectionChanged(bool connected) => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Connection.ConnectionChanged -= OnConnectionChanged;
+}

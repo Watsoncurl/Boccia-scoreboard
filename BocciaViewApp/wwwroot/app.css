@@ -21,7 +21,7 @@ h1:focus {
 }
 
     .blazor-error-boundary::after {
-        content: "An error has occurred."
+        content: "Ocurrió un error."
     }
 
 .darker-border-checkbox.form-check-input {
@@ -35,4 +35,172 @@ h1:focus {
 
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
+}
+
+/* ======================================================================
+   Marcador de Boccia: pensado para TV/proyector (horizontal) y celulares.
+   ====================================================================== */
+
+:root {
+    --bg: #0b0f17;
+    --surface: #151b26;
+    --text: #f4f6fb;
+    --muted: #9aa4b8;
+    --red: #d32f2f;
+    --red-dark: #8e1b1b;
+    --blue: #1e63d6;
+    --blue-dark: #12397d;
+    --gold: #ffcc33;
+}
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+a { color: inherit; }
+
+/* Indicador de conexión */
+.conn-dot {
+    display: inline-block;
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 50%;
+    flex: none;
+}
+.conn-dot.ok { background: #2ecc71; }
+.conn-dot.lost { background: #e67e22; animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+
+/* ---------------------------------------------------------- Lista */
+.lobby { max-width: 56rem; margin: 0 auto; padding: 1.5rem; }
+.lobby-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.lobby-header h1 { font-size: 1.8rem; margin: 0; }
+.lobby-hint, .lobby-message { color: var(--muted); }
+.lobby-list { list-style: none; padding: 0; display: grid; gap: 0.75rem; }
+.lobby-card {
+    display: grid;
+    gap: 0.4rem;
+    padding: 1rem 1.25rem;
+    border-radius: 0.75rem;
+    background: var(--surface);
+    text-decoration: none;
+    border-left: 0.35rem solid var(--muted);
+}
+.lobby-card:hover, .lobby-card:focus-visible { outline: 2px solid var(--text); }
+.lobby-card.status-inprogress { border-left-color: #2ecc71; }
+.lobby-meta { color: var(--muted); font-size: 0.9rem; }
+.lobby-score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem; font-size: 1.25rem; }
+.lobby-score .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lobby-score .name.red { color: #ff8a80; }
+.lobby-score .name.blue { color: #82b1ff; text-align: right; }
+.lobby-score .pts { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------- Marcador */
+.sb-message { display: grid; place-content: center; gap: 1rem; height: 100vh; text-align: center; font-size: 1.5rem; color: var(--muted); }
+
+.sb {
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    height: 100vh;
+    height: 100dvh;
+    gap: 1.5vmin;
+    padding: 1.5vmin;
+    box-sizing: border-box;
+}
+
+.sb-header {
+    display: flex;
+    align-items: center;
+    gap: 2vmin;
+    font-size: clamp(1rem, 3vmin, 2.2rem);
+    color: var(--muted);
+}
+.sb-division { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-end { color: var(--text); font-weight: 700; }
+
+.sb-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5vmin; min-height: 0; }
+
+.sb-side {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5vmin;
+    border-radius: 2vmin;
+    padding: 2vmin;
+    min-height: 0;
+    text-align: center;
+    transition: opacity 0.4s, box-shadow 0.4s;
+}
+.sb-side.red { background: linear-gradient(160deg, var(--red), var(--red-dark)); }
+.sb-side.blue { background: linear-gradient(160deg, var(--blue), var(--blue-dark)); }
+.sb-side.winner { box-shadow: inset 0 0 0 1vmin var(--gold); }
+.sb-side.loser { opacity: 0.45; }
+
+.sb-name {
+    font-size: clamp(1.4rem, 6vmin, 5rem);
+    font-weight: 700;
+    line-height: 1.1;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+.sb-members { font-size: clamp(0.9rem, 2.6vmin, 2rem); opacity: 0.85; }
+.sb-score {
+    font-size: clamp(5rem, 30vmin, 22rem);
+    font-weight: 800;
+    line-height: 0.9;
+    font-variant-numeric: tabular-nums;
+}
+.sb-tiebreak { font-size: clamp(1rem, 3.5vmin, 2.5rem); font-weight: 600; }
+
+.sb-balls { display: flex; gap: 1.2vmin; flex-wrap: wrap; justify-content: center; }
+.ball {
+    width: clamp(0.9rem, 4vmin, 3rem);
+    height: clamp(0.9rem, 4vmin, 3rem);
+    border-radius: 50%;
+    border: 0.4vmin solid rgba(255, 255, 255, 0.9);
+    box-sizing: border-box;
+}
+.ball.left { background: rgba(255, 255, 255, 0.95); }
+.ball.used { background: transparent; opacity: 0.5; }
+
+.sb-tags { display: flex; gap: 1vmin; flex-wrap: wrap; justify-content: center; min-height: 1.8em; font-size: clamp(0.9rem, 2.8vmin, 2rem); }
+.tag { padding: 0.2em 0.7em; border-radius: 999px; font-weight: 600; }
+.tag.jack { background: #fff; color: #111; }
+.tag.penalty { background: var(--gold); color: #111; }
+
+.sb-ends { overflow-x: auto; }
+.sb-ends table {
+    margin: 0 auto;
+    border-collapse: collapse;
+    font-size: clamp(1rem, 3.5vmin, 2.6rem);
+    font-variant-numeric: tabular-nums;
+}
+.sb-ends th, .sb-ends td {
+    min-width: 2.2em;
+    padding: 0.15em 0.4em;
+    text-align: center;
+    border: 1px solid #2a3346;
+}
+.sb-ends thead th { color: var(--muted); font-weight: 600; }
+.sb-ends .current { background: #263042; color: var(--gold); }
+.swatch { display: inline-block; width: 1em; height: 1em; border-radius: 50%; vertical-align: middle; }
+.swatch.red { background: var(--red); }
+.swatch.blue { background: var(--blue); }
+
+.sb-banner {
+    text-align: center;
+    font-size: clamp(1.2rem, 5vmin, 3.5rem);
+    font-weight: 700;
+    color: var(--gold);
+}
+
+/* Celular en vertical: los lados se apilan. */
+@media (orientation: portrait) {
+    .sb-sides { grid-template-columns: 1fr; }
+    .sb-score { font-size: clamp(4rem, 18vh, 14rem); }
 }

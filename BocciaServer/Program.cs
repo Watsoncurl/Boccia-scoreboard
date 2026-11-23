@@ -8,12 +8,22 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("BocciaDb")
-    ?? throw new InvalidOperationException(
-        "Falta la cadena de conexión 'ConnectionStrings:BocciaDb'. " +
-        "Configurala con: dotnet user-secrets set \"ConnectionStrings:BocciaDb\" \"<cadena>\"");
+// Proveedor de base de datos: "SqlServer" (por defecto) o "Sqlite" (solo para desarrollo local).
+var useSqlite = string.Equals(builder.Configuration["Database:Provider"], "Sqlite", StringComparison.OrdinalIgnoreCase);
 
-builder.Services.AddDbContext<BocciaDbContext>(options => options.UseSqlServer(connectionString));
+if (useSqlite)
+{
+    var sqlitePath = builder.Configuration["Database:SqlitePath"] ?? "boccia-dev.db";
+    builder.Services.AddDbContext<BocciaDbContext>(options => options.UseSqlite($"Data Source={sqlitePath}"));
+}
+else
+{
+    var connectionString = builder.Configuration.GetConnectionString("BocciaDb")
+        ?? throw new InvalidOperationException(
+            "Falta la cadena de conexión 'ConnectionStrings:BocciaDb'. " +
+            "Configurala con: dotnet user-secrets set \"ConnectionStrings:BocciaDb\" \"<cadena>\"");
+    builder.Services.AddDbContext<BocciaDbContext>(options => options.UseSqlServer(connectionString));
+}
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<MatchService>();
@@ -30,6 +40,11 @@ builder.Services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+if (useSqlite)
+{
+    await DevelopmentDatabase.InitializeAsync(app.Services);
+}
 
 app.UseExceptionHandler();
 

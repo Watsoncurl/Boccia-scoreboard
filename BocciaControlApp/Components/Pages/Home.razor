@@ -1,7 +1,112 @@
-﻿@page "/"
+@page "/"
+@implements IAsyncDisposable
+@inject BocciaApiClient Api
+@inject ScoreboardConnection Connection
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Partidos · Boccia</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="page-header">
+    <h1>Partidos</h1>
+    <a class="btn primary" href="matches/new">+ Nuevo partido</a>
+</div>
 
-Welcome to your new app.
+<div class="filters" role="group" aria-label="Filtrar por estado">
+    @foreach (var (label, status) in Filters)
+    {
+        <button type="button" class="chip @(filter == status ? "active" : "")" @onclick="() => filter = status">@label</button>
+    }
+</div>
+
+<ErrorAlert Message="@error" />
+
+@if (matches is null && error is null)
+{
+    <p class="muted">Cargando…</p>
+}
+else if (matches is not null && Filtered.Count == 0)
+{
+    <p class="muted">No hay partidos para mostrar.</p>
+}
+else if (matches is not null)
+{
+    <ul class="match-list">
+        @foreach (var m in Filtered)
+        {
+            <li>
+                <a class="match-row" href="matches/@m.MatchId">
+                    <span class="badge status-@m.Status.ToString().ToLowerInvariant()">@Labels.Of(m.Status)</span>
+                    <span class="match-meta">#@m.MatchId · @m.DivisionCode@(m.Court is null ? "" : $" · Cancha {m.Court}")</span>
+                    <span class="match-score">
+                        <span class="side-name red">@m.RedName</span>
+                        <strong>@m.RedScore – @m.BlueScore</strong>
+                        <span class="side-name blue">@m.BlueName</span>
+                    </span>
+                </a>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private static readonly (string Label, MatchStatus? Status)[] Filters =
+    [
+        ("Todos", null),
+        ("En juego", MatchStatus.InProgress),
+        ("Programados", MatchStatus.Scheduled),
+        ("Finalizados", MatchStatus.Finished),
+        ("Cancelados", MatchStatus.Cancelled),
+    ];
+
+    private List<MatchSummaryDto>? matches;
+    private MatchStatus? filter;
+    private string? error;
+
+    private List<MatchSummaryDto> Filtered =>
+        (matches ?? [])
+            .Where(m => filter is null || m.Status == filter)
+            .OrderBy(m => m.Status switch { MatchStatus.InProgress => 0, MatchStatus.Scheduled => 1, _ => 2 })
+            .ThenByDescending(m => m.MatchId)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Connection.MatchListChanged += OnMatchListChanged;
+        Connection.ConnectionChanged += OnConnectionChanged;
+        await LoadAsync();
+        await Connection.JoinLobbyAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            matches = await Api.GetMatchesAsync();
+            error = null;
+        }
+        catch (Exception ex) when (ApiCall.IsApiError(ex))
+        {
+            error = ApiCall.ErrorMessage(ex);
+        }
+    }
+
+    private Task OnMatchListChanged(MatchSummaryDto summary) => InvokeAsync(() =>
+    {
+        if (matches is null) return;
+        var index = matches.FindIndex(m => m.MatchId == summary.MatchId);
+        if (index >= 0) matches[index] = summary; else matches.Add(summary);
+        StateHasChanged();
+    });
+
+    private Task OnConnectionChanged(bool connected) => InvokeAsync(async () =>
+    {
+        if (connected) await LoadAsync();
+        StateHasChanged();
+    });
+
+    public ValueTask DisposeAsync()
+    {
+        Connection.MatchListChanged -= OnMatchListChanged;
+        Connection.ConnectionChanged -= OnConnectionChanged;
+        return ValueTask.CompletedTask;
+    }
+}

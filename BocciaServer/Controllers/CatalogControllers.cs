@@ -32,8 +32,8 @@ public class AthletesController(BocciaDbContext db) : ControllerBase
         {
             FirstName = request.FirstName.Trim(),
             LastName = request.LastName.Trim(),
-            Classification = request.Classification,
-            Club = request.Club?.Trim(),
+            Classification = string.IsNullOrWhiteSpace(request.Classification) ? null : request.Classification,
+            Club = string.IsNullOrWhiteSpace(request.Club) ? null : request.Club.Trim(),
         };
         db.Athletes.Add(athlete);
         await db.SaveChangesAsync(ct);

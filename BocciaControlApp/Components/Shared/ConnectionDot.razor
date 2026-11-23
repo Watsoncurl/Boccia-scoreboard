@@ -1,0 +1,9 @@
+@* Indicador discreto del estado de la conexión en tiempo real con el servidor. *@
+<span class="conn-dot @(Connected ? "ok" : "lost")"
+      title="@(Connected ? "Conectado en tiempo real" : "Sin conexión con el servidor, reconectando…")"
+      role="status"
+      aria-label="@(Connected ? "Conectado" : "Sin conexión")"></span>
+
+@code {
+    [Parameter] public bool Connected { get; set; }
+}

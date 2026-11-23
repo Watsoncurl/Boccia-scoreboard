@@ -1,7 +1,103 @@
-﻿@page "/"
+@page "/"
+@implements IAsyncDisposable
+@inject BocciaApiClient Api
+@inject ScoreboardConnection Connection
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Marcador de Boccia</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="lobby">
+    <header class="lobby-header">
+        <h1>Marcador de Boccia</h1>
+        <ConnectionDot Connected="Connection.IsConnected" />
+    </header>
 
-Welcome to your new app.
+    @if (error is not null)
+    {
+        <p class="lobby-message">@error</p>
+    }
+    else if (matches is null)
+    {
+        <p class="lobby-message">Cargando partidos…</p>
+    }
+    else if (Visible.Count == 0)
+    {
+        <p class="lobby-message">No hay partidos en juego ni programados.</p>
+    }
+    else
+    {
+        <p class="lobby-hint">Elegí un partido para ver su marcador.</p>
+        <ul class="lobby-list">
+            @foreach (var m in Visible)
+            {
+                <li>
+                    <a class="lobby-card status-@m.Status.ToString().ToLowerInvariant()" href="match/@m.MatchId">
+                        <span class="lobby-meta">
+                            @m.DivisionCode@(m.Court is null ? "" : $" · Cancha {m.Court}") · @Labels.Of(m.Status)
+                        </span>
+                        <span class="lobby-score">
+                            <span class="name red">@m.RedName</span>
+                            <span class="pts">@m.RedScore – @m.BlueScore</span>
+                            <span class="name blue">@m.BlueName</span>
+                        </span>
+                    </a>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    private List<MatchSummaryDto>? matches;
+    private string? error;
+
+    /// <summary>En juego primero, luego programados y los últimos finalizados.</summary>
+    private List<MatchSummaryDto> Visible =>
+        (matches ?? [])
+            .Where(m => m.Status != MatchStatus.Cancelled)
+            .OrderBy(m => m.Status switch { MatchStatus.InProgress => 0, MatchStatus.Scheduled => 1, _ => 2 })
+            .ThenByDescending(m => m.MatchId)
+            .Take(20)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Connection.MatchListChanged += OnMatchListChanged;
+        Connection.ConnectionChanged += OnConnectionChanged;
+        await LoadAsync();
+        await Connection.JoinLobbyAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            matches = await Api.GetMatchesAsync();
+            error = null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or ApiException)
+        {
+            error = "No se pudo conectar con el servidor. Se reintentará automáticamente.";
+        }
+    }
+
+    private Task OnMatchListChanged(MatchSummaryDto summary) => InvokeAsync(() =>
+    {
+        if (matches is null) return;
+        var index = matches.FindIndex(m => m.MatchId == summary.MatchId);
+        if (index >= 0) matches[index] = summary; else matches.Add(summary);
+        StateHasChanged();
+    });
+
+    private Task OnConnectionChanged(bool connected) => InvokeAsync(async () =>
+    {
+        if (connected) await LoadAsync();
+        StateHasChanged();
+    });
+
+    public ValueTask DisposeAsync()
+    {
+        Connection.MatchListChanged -= OnMatchListChanged;
+        Connection.ConnectionChanged -= OnConnectionChanged;
+        return ValueTask.CompletedTask;
+    }
+}

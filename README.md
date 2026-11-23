@@ -44,16 +44,30 @@ At the end of the game, the server stores the result in the database and notifie
 | Project | Description |
 |---|---|
 | `BocciaServer` | ASP.NET Core API + SignalR hub (`/hubs/scoreboard`). Game rules, scoring and persistence (EF Core, SQL Server). |
-| `BocciaShared` | DTOs, enums and SignalR hub contract shared by the server and the Blazor apps. |
-| `BocciaControlApp` | Blazor web app to operate a match (referee/table official). |
-| `BocciaViewApp` | Blazor web app that shows the live scoreboard. |
+| `BocciaShared` | DTOs, enums, scoring rules and SignalR hub contract shared by the server and the Blazor apps. |
+| `BocciaClient` | API client and SignalR connection (auto-reconnect) used by both Blazor apps. |
+| `BocciaControlApp` | Blazor web app to operate a match: athletes, new matches, throws, measurements, penalties, ends and tie-breaks. |
+| `BocciaViewApp` | Blazor web app that shows the live scoreboard (TV/projector or phone). |
 | `BocciaDatabase` | SQL Server database project (SDK-style, builds on Linux). |
 | `BocciaServer.Tests` | xUnit tests: scoring rules and full match flow (SQLite in-memory). |
 
 All apps listen on every network interface so any device on the LAN can open them:
 server `:5123`, control app `:5201`, scoreboard `:5202`.
 
-### Running locally
+### Quick start without SQL Server (development)
+
+The server can use a local SQLite file instead of SQL Server. Tables and divisions are created automatically:
+
+```bash
+dotnet run --project BocciaServer --launch-profile sqlite
+dotnet run --project BocciaControlApp
+dotnet run --project BocciaViewApp
+```
+
+Then open the control app at `http://<host>:5201` and the scoreboard at `http://<host>:5202`.
+If the apps run on another machine than the server, set `BocciaServer:BaseUrl` in their `appsettings.json`.
+
+### Running locally with SQL Server
 
 ```bash
 # 1. SQL Server (e.g. Docker) and deploy the schema

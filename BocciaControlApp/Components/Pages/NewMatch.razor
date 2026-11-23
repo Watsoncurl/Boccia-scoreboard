@@ -1,0 +1,177 @@
+@page "/matches/new"
+@inject BocciaApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Nuevo partido · Boccia</PageTitle>
+
+<div class="page-header">
+    <h1>Nuevo partido</h1>
+</div>
+
+@if (divisions is null)
+{
+    <ErrorAlert Message="@error" />
+    @if (error is null)
+    {
+        <p class="muted">Cargando…</p>
+    }
+}
+else
+{
+    <EditForm Model="request" OnValidSubmit="CreateAsync" FormName="new-match">
+        <DataAnnotationsValidator />
+
+        <section class="card">
+            <div class="form-grid">
+                <label>
+                    División
+                    <InputSelect @bind-Value="request.DivisionCode" @bind-Value:after="OnDivisionChanged">
+                        @foreach (var d in divisions)
+                        {
+                            <option value="@d.Code">@d.Name</option>
+                        }
+                    </InputSelect>
+                </label>
+                <label>
+                    Cancha
+                    <InputText @bind-Value="request.Court" placeholder="Opcional" />
+                    <ValidationMessage For="() => request.Court" />
+                </label>
+                <label>
+                    Árbitro
+                    <InputText @bind-Value="request.Referee" placeholder="Opcional" />
+                    <ValidationMessage For="() => request.Referee" />
+                </label>
+            </div>
+            @if (Division is { } div)
+            {
+                <p class="muted">
+                    @Labels.Of(div.MatchType): @div.PlayersPerSide jugador@(div.PlayersPerSide > 1 ? "es" : "") por lado,
+                    @div.BallsPerPlayer bola@(div.BallsPerPlayer > 1 ? "s" : "") por jugador, @div.NumberOfEnds parciales.
+                </p>
+            }
+        </section>
+
+        <div class="two-columns">
+            @SideForm(Side.Red, request.Red, redSlots)
+            @SideForm(Side.Blue, request.Blue, blueSlots)
+        </div>
+
+        <ErrorAlert Message="@error" />
+
+        <div class="actions">
+            <a class="btn" href="">Cancelar</a>
+            <button type="submit" class="btn primary" disabled="@busy">Crear partido</button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    private List<DivisionDto>? divisions;
+    private List<AthleteDto> athletes = [];
+    private readonly CreateMatchRequest request = new();
+    private List<int?> redSlots = [], blueSlots = [];
+    private string? error;
+    private bool busy;
+
+    private DivisionDto? Division => divisions?.FirstOrDefault(d => d.Code == request.DivisionCode);
+
+    private RenderFragment SideForm(Side side, CreateSideRequest sideRequest, List<int?> slots) => __builder =>
+    {
+        <section class="card side-card @Labels.Css(side)">
+            <h2>Lado @Labels.Of(side).ToLowerInvariant()</h2>
+            <label>
+                Nombre en el marcador
+                <InputText @bind-Value="sideRequest.DisplayName"
+                           placeholder="@(slots.Count > 0 ? "Se completa con los deportistas si queda vacío" : "")" />
+            </label>
+
+            @if (athletes.Count > 0)
+            {
+                <fieldset>
+                    <legend>Titulares <span class="muted">(opcional)</span></legend>
+                    @for (var i = 0; i < slots.Count; i++)
+                    {
+                        var index = i;
+                        <label>
+                            Jugador @(index + 1)
+                            <select @bind="slots[index]">
+                                <option value="">Sin asignar</option>
+                                @foreach (var a in athletes)
+                                {
+                                    <option value="@a.AthleteId">@a.LastName, @a.FirstName@(a.Classification is null ? "" : $" ({a.Classification})")</option>
+                                }
+                            </select>
+                        </label>
+                    }
+                </fieldset>
+            }
+        </section>
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            divisions = await Api.GetDivisionsAsync();
+            athletes = await Api.GetAthletesAsync();
+            request.DivisionCode = divisions.FirstOrDefault()?.Code ?? "";
+            OnDivisionChanged();
+        }
+        catch (Exception ex) when (ApiCall.IsApiError(ex))
+        {
+            error = ApiCall.ErrorMessage(ex);
+        }
+    }
+
+    private void OnDivisionChanged()
+    {
+        var players = Division?.PlayersPerSide ?? 1;
+        redSlots = Enumerable.Repeat<int?>(null, players).ToList();
+        blueSlots = Enumerable.Repeat<int?>(null, players).ToList();
+    }
+
+    private async Task CreateAsync()
+    {
+        error = PrepareSide(Side.Red, request.Red, redSlots) ?? PrepareSide(Side.Blue, request.Blue, blueSlots);
+        if (error is not null) return;
+
+        busy = true;
+        try
+        {
+            var state = await Api.CreateMatchAsync(request);
+            Navigation.NavigateTo($"matches/{state.MatchId}");
+        }
+        catch (Exception ex) when (ApiCall.IsApiError(ex))
+        {
+            error = ApiCall.ErrorMessage(ex);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    /// <summary>Completa titulares y nombre del lado. Devuelve un mensaje si hay un error.</summary>
+    private string? PrepareSide(Side side, CreateSideRequest sideRequest, List<int?> slots)
+    {
+        var chosen = slots.Where(id => id is not null).Select(id => id!.Value).ToList();
+        var sideName = $"lado {Labels.Of(side).ToLowerInvariant()}";
+
+        if (chosen.Count > 0 && chosen.Count < slots.Count)
+            return $"Completá todos los titulares del {sideName} o dejalos todos sin asignar.";
+
+        sideRequest.AthleteIds = chosen;
+
+        if (string.IsNullOrWhiteSpace(sideRequest.DisplayName) && chosen.Count > 0)
+        {
+            sideRequest.DisplayName = string.Join(" / ", chosen.Select(id =>
+            {
+                var a = athletes.First(x => x.AthleteId == id);
+                return chosen.Count == 1 ? $"{a.FirstName} {a.LastName}" : a.LastName;
+            }));
+        }
+
+        return string.IsNullOrWhiteSpace(sideRequest.DisplayName) ? $"Ingresá el nombre del {sideName}." : null;
+    }
+}

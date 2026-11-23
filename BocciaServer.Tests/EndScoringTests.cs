@@ -1,6 +1,5 @@
-using BocciaServer.Services;
 using BocciaShared.Domain;
-using static BocciaServer.Services.EndScoring;
+using static BocciaShared.Domain.EndScoring;
 
 namespace BocciaServer.Tests;
 

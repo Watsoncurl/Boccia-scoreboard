@@ -1,0 +1,117 @@
+@page "/athletes"
+@inject BocciaApiClient Api
+
+<PageTitle>Deportistas · Boccia</PageTitle>
+
+<div class="page-header">
+    <h1>Deportistas</h1>
+</div>
+
+<div class="two-columns">
+    <section class="card">
+        <h2>Nuevo deportista</h2>
+        <EditForm Model="form" OnValidSubmit="CreateAsync" FormName="athlete">
+            <DataAnnotationsValidator />
+
+            <label>
+                Nombre
+                <InputText @bind-Value="form.FirstName" />
+                <ValidationMessage For="() => form.FirstName" />
+            </label>
+            <label>
+                Apellido
+                <InputText @bind-Value="form.LastName" />
+                <ValidationMessage For="() => form.LastName" />
+            </label>
+            <label>
+                Clasificación
+                <InputSelect @bind-Value="form.Classification">
+                    <option value="">Sin indicar</option>
+                    <option value="BC1">BC1</option>
+                    <option value="BC2">BC2</option>
+                    <option value="BC3">BC3</option>
+                    <option value="BC4">BC4</option>
+                </InputSelect>
+            </label>
+            <label>
+                Club o delegación
+                <InputText @bind-Value="form.Club" />
+                <ValidationMessage For="() => form.Club" />
+            </label>
+
+            <ErrorAlert Message="@error" />
+            @if (created is not null)
+            {
+                <p class="success">Se agregó a @created.</p>
+            }
+
+            <button type="submit" class="btn primary" disabled="@busy">Agregar</button>
+        </EditForm>
+    </section>
+
+    <section class="card">
+        <h2>Registrados</h2>
+        @if (athletes is null)
+        {
+            <p class="muted">@(loadError ?? "Cargando…")</p>
+        }
+        else if (athletes.Count == 0)
+        {
+            <p class="muted">Todavía no hay deportistas.</p>
+        }
+        else
+        {
+            <table class="table">
+                <thead>
+                    <tr><th>Apellido y nombre</th><th>Clasif.</th><th>Club</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in athletes)
+                    {
+                        <tr><td>@a.LastName, @a.FirstName</td><td>@a.Classification</td><td>@a.Club</td></tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+</div>
+
+@code {
+    private CreateAthleteRequest form = new();
+    private List<AthleteDto>? athletes;
+    private string? error, loadError, created;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            athletes = await Api.GetAthletesAsync();
+        }
+        catch (Exception ex) when (ApiCall.IsApiError(ex))
+        {
+            loadError = ApiCall.ErrorMessage(ex);
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        busy = true;
+        error = created = null;
+        try
+        {
+            var athlete = await Api.CreateAthleteAsync(form);
+            athletes = [.. (athletes ?? []).Append(athlete).OrderBy(a => a.LastName).ThenBy(a => a.FirstName)];
+            created = $"{athlete.FirstName} {athlete.LastName}";
+            form = new CreateAthleteRequest();
+        }
+        catch (Exception ex) when (ApiCall.IsApiError(ex))
+        {
+            error = ApiCall.ErrorMessage(ex);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

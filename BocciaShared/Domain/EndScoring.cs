@@ -1,6 +1,5 @@
-using BocciaShared.Domain;
 
-namespace BocciaServer.Services;
+namespace BocciaShared.Domain;
 
 /// <summary>
 /// Cálculo del puntaje de un parcial según el reglamento de boccia:

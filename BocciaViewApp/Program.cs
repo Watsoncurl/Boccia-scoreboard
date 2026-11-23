@@ -1,8 +1,12 @@
+using BocciaClient;
 using BocciaViewApp.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+// Cliente de la API y conexión SignalR con BocciaServer (sección "BocciaServer" de appsettings).
+builder.Services.AddBocciaClient(builder.Configuration);
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
@@ -16,7 +20,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
+// Sin redirección a HTTPS: en la red local los dispositivos se conectan por HTTP.
 
 app.UseAntiforgery();
 

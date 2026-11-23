@@ -1,0 +1,215 @@
+@page "/match/{MatchId:int}"
+@implements IAsyncDisposable
+@inject BocciaApiClient Api
+@inject ScoreboardConnection Connection
+
+<PageTitle>@Title</PageTitle>
+
+@if (state is null)
+{
+    <div class="sb-message">
+        <p>@(error ?? "Cargando marcador…")</p>
+        <a href="">Volver a la lista de partidos</a>
+    </div>
+}
+else
+{
+    <div class="sb">
+        <header class="sb-header">
+            <span class="sb-division">
+                @state.Division.Name@(state.Court is null ? "" : $" · Cancha {state.Court}")
+            </span>
+            <span class="sb-end">@EndLabel</span>
+            <ConnectionDot Connected="Connection.IsConnected" />
+        </header>
+
+        <main class="sb-sides">
+            @SidePanel(state.Red)
+            @SidePanel(state.Blue)
+        </main>
+
+        <section class="sb-ends" aria-label="Puntos por parcial">
+            <table>
+                <thead>
+                    <tr>
+                        <th></th>
+                        @foreach (var col in Columns)
+                        {
+                            <th class="@(col.IsCurrent ? "current" : "")">@col.Header</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var side in new[] { Side.Red, Side.Blue })
+                    {
+                        <tr>
+                            <th><span class="swatch @Labels.Css(side)"></span></th>
+                            @foreach (var col in Columns)
+                            {
+                                <td class="@(col.IsCurrent ? "current" : "")">@col.PointsFor(side)</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+
+        @if (Banner is { } banner)
+        {
+            <footer class="sb-banner">@banner</footer>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int MatchId { get; set; }
+
+    private MatchStateDto? state;
+    private string? error;
+
+    private string Title => state is null ? "Marcador" : $"{state.Red.Name} {state.Red.Score} – {state.Blue.Score} {state.Blue.Name}";
+
+    private string EndLabel => state switch
+    {
+        { Status: MatchStatus.Scheduled } => "Por comenzar",
+        { Status: MatchStatus.Finished } => "Final",
+        { Status: MatchStatus.Cancelled } => "Cancelado",
+        { AwaitingTieBreak: true } => "Empate",
+        { CurrentEnd: { IsTieBreak: true } } => "Desempate",
+        { CurrentEnd: { } end } => $"Parcial {end.EndNumber} de {state.Division.NumberOfEnds}",
+        _ => "",
+    };
+
+    private string? Banner => state switch
+    {
+        { Status: MatchStatus.Finished, WinnerSide: { } w } => $"Ganador: {(w == Side.Red ? state.Red.Name : state.Blue.Name)}",
+        { Status: MatchStatus.Cancelled } => "Partido cancelado",
+        { Status: MatchStatus.Scheduled } => "El partido aún no comenzó",
+        { AwaitingTieBreak: true } => "Empate: se jugará un parcial de desempate",
+        _ => null,
+    };
+
+    private RenderFragment SidePanel(SideStateDto side) => __builder =>
+    {
+        var end = state!.CurrentEnd;
+        var isWinner = state.WinnerSide == side.Side;
+        var isLoser = state.WinnerSide is not null && !isWinner;
+
+        <section class="sb-side @Labels.Css(side.Side) @(isWinner ? "winner" : "") @(isLoser ? "loser" : "")"
+                 aria-label="Lado @Labels.Of(side.Side)">
+            <div class="sb-name">@side.Name</div>
+            @if (side.Members.Count > 1)
+            {
+                <div class="sb-members">@string.Join(" · ", side.Members.Where(m => !m.IsSubstitute).Select(m => m.FullName))</div>
+            }
+            <div class="sb-score">@side.Score</div>
+
+            @if (state.Ends.Any(e => e.IsTieBreak))
+            {
+                <div class="sb-tiebreak">Desempate: @side.TieBreakScore</div>
+            }
+
+            @if (end is not null)
+            {
+                <div class="sb-balls" aria-label="@side.ColourBallsRemaining bolas por lanzar">
+                    @for (var i = 0; i < state.Division.BallsPerSide; i++)
+                    {
+                        <span class="ball @(i < side.ColourBallsRemaining ? "left" : "used")"></span>
+                    }
+                </div>
+                <div class="sb-tags">
+                    @if (end.JackSide == side.Side && !end.JackThrown)
+                    {
+                        <span class="tag jack">Lanza el jack</span>
+                    }
+                    @if (side.PenaltyBallsAvailable > 0)
+                    {
+                        <span class="tag penalty">+@side.PenaltyBallsAvailable bola@(side.PenaltyBallsAvailable > 1 ? "s" : "") de penalización</span>
+                    }
+                </div>
+            }
+        </section>
+    };
+
+    /// <summary>Columnas de la tabla de parciales: los regulares (jugados o no) y los desempates.</summary>
+    private IEnumerable<EndColumn> Columns
+    {
+        get
+        {
+            var ends = state!.Ends;
+            var regular = ends.Where(e => !e.IsTieBreak).ToDictionary(e => e.EndNumber);
+            var currentNumber = state.CurrentEnd?.EndNumber;
+
+            var regularCount = state.Division.NumberOfEnds;
+            for (var n = 1; n <= regularCount; n++)
+            {
+                regular.TryGetValue(n, out var end);
+                yield return new EndColumn(n.ToString(), end, end is not null && end.EndNumber == currentNumber);
+            }
+
+            var tieBreaks = ends.Where(e => e.IsTieBreak).ToList();
+            for (var i = 0; i < tieBreaks.Count; i++)
+            {
+                yield return new EndColumn(tieBreaks.Count == 1 ? "D" : $"D{i + 1}", tieBreaks[i], tieBreaks[i].EndNumber == currentNumber);
+            }
+        }
+    }
+
+    private sealed record EndColumn(string Header, EndSummaryDto? End, bool IsCurrent)
+    {
+        public string PointsFor(Side side) => End switch
+        {
+            { Status: EndStatus.Finished } e => (side == Side.Red ? e.RedPoints : e.BluePoints).ToString(),
+            { Status: EndStatus.InProgress } => "·",
+            _ => "",
+        };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Connection.MatchUpdated += OnMatchUpdated;
+        Connection.ConnectionChanged += OnConnectionChanged;
+        await LoadAsync();
+        await Connection.JoinMatchAsync(MatchId);
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            state = await Api.GetMatchAsync(MatchId);
+            error = null;
+        }
+        catch (ApiException ex) when (ex.StatusCode == 404)
+        {
+            error = $"No existe el partido {MatchId}.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or ApiException)
+        {
+            error = "No se pudo conectar con el servidor. Se reintentará automáticamente.";
+        }
+    }
+
+    private Task OnMatchUpdated(MatchStateDto updated) =>
+        updated.MatchId != MatchId ? Task.CompletedTask : InvokeAsync(() =>
+        {
+            state = updated;
+            error = null;
+            StateHasChanged();
+        });
+
+    // Al reconectar se recarga el estado: pudieron perderse notificaciones.
+    private Task OnConnectionChanged(bool connected) => InvokeAsync(async () =>
+    {
+        if (connected) await LoadAsync();
+        StateHasChanged();
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        Connection.MatchUpdated -= OnMatchUpdated;
+        Connection.ConnectionChanged -= OnConnectionChanged;
+        try { await Connection.LeaveMatchAsync(MatchId); }
+        catch { /* la conexión puede estar cerrándose junto con el circuito */ }
+    }
+}

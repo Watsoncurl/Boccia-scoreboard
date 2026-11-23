@@ -1,0 +1,482 @@
+@page "/matches/{MatchId:int}"
+@implements IAsyncDisposable
+@inject BocciaApiClient Api
+@inject ScoreboardConnection Connection
+
+<PageTitle>@(state is null ? "Partido" : $"{state.Red.Name} vs {state.Blue.Name}") · Boccia</PageTitle>
+
+@if (state is null)
+{
+    <ErrorAlert Message="@error" />
+    @if (error is null)
+    {
+        <p class="muted">Cargando…</p>
+    }
+    <a href="">Volver a partidos</a>
+    return;
+}
+
+@* ------------------------------------------------------------ Encabezado *@
+<section class="card scoreline">
+    <div class="scoreline-meta">
+        <span class="badge status-@state.Status.ToString().ToLowerInvariant()">@Labels.Of(state.Status)</span>
+        <span>#@state.MatchId · @state.Division.Name@(state.Court is null ? "" : $" · Cancha {state.Court}")@(state.Referee is null ? "" : $" · Árbitro: {state.Referee}")</span>
+    </div>
+    <div class="scoreline-score">
+        <span class="side-name red">@state.Red.Name</span>
+        <strong>@state.Red.Score – @state.Blue.Score</strong>
+        <span class="side-name blue">@state.Blue.Name</span>
+    </div>
+    @if (state.Ends.Count > 0)
+    {
+        <table class="table ends-table">
+            <thead>
+                <tr>
+                    <th></th>
+                    @foreach (var e in state.Ends)
+                    {
+                        <th>@(e.IsTieBreak ? "D" : e.EndNumber.ToString())</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var side in new[] { Side.Red, Side.Blue })
+                {
+                    <tr>
+                        <th><span class="swatch @Labels.Css(side)"></span></th>
+                        @foreach (var e in state.Ends)
+                        {
+                            <td>@(e.Status == EndStatus.Finished ? (side == Side.Red ? e.RedPoints : e.BluePoints) : (e.Status == EndStatus.InProgress ? "·" : "–"))</td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<ErrorAlert Message="@error" OnDismiss="() => error = null" />
+
+@* ------------------------------------------------------------ Según el estado *@
+@switch (state.Status)
+{
+    case MatchStatus.Scheduled:
+        <section class="card">
+            <p>El partido está programado. Al iniciarlo se abre el parcial 1 y el lado rojo lanza el jack.</p>
+            <div class="actions">
+                <button class="btn primary big" disabled="@busy" @onclick="() => RunAsync(() => Api.StartMatchAsync(MatchId))">Iniciar partido</button>
+            </div>
+        </section>
+        break;
+
+    case MatchStatus.Finished:
+        <section class="card result">
+            <h2>Partido finalizado</h2>
+            <p>Ganador: <strong class="side-name @Labels.Css(state.WinnerSide!.Value)">@(state.WinnerSide == Side.Red ? state.Red.Name : state.Blue.Name)</strong></p>
+        </section>
+        break;
+
+    case MatchStatus.Cancelled:
+        <section class="card"><p>El partido fue cancelado.</p></section>
+        break;
+
+    case MatchStatus.InProgress when state.AwaitingTieBreak:
+        <section class="card">
+            <h2>Empate</h2>
+            <p>El partido terminó empatado. Indicá qué lado lanza el jack en el parcial de desempate.</p>
+            <div class="actions">
+                <select @bind="tieBreakJackSide" aria-label="Lado que lanza el jack">
+                    <option value="@Side.Red">Lanza el jack: rojo</option>
+                    <option value="@Side.Blue">Lanza el jack: azul</option>
+                </select>
+                <button class="btn primary big" disabled="@busy"
+                        @onclick="() => RunAsync(() => Api.StartTieBreakAsync(MatchId, new StartTieBreakRequest { JackSide = tieBreakJackSide }))">
+                    Iniciar desempate
+                </button>
+            </div>
+        </section>
+        break;
+
+    case MatchStatus.InProgress when state.CurrentEnd is { } end:
+        <h2 class="end-title">@Labels.EndName(end.EndNumber, end.IsTieBreak)@(end.IsTieBreak ? "" : $" de {state.Division.NumberOfEnds}")</h2>
+
+        @* --- Lanzamientos --- *@
+        <div class="two-columns">
+            @foreach (var side in new[] { state.Red, state.Blue })
+            {
+                <section class="card side-card @Labels.Css(side.Side)">
+                    <h3>@side.Name</h3>
+                    <p class="muted">@side.ColourBallsRemaining de @state.Division.BallsPerSide bolas por lanzar</p>
+
+                    @if (!end.JackThrown)
+                    {
+                        @if (end.JackSide == side.Side)
+                        {
+                            <button class="btn jack big" disabled="@busy" @onclick="() => ThrowAsync(side.Side, BallType.Jack, ThrowResult.InPlay)">Lanzar jack</button>
+                        }
+                        else
+                        {
+                            <p class="muted">Lanza el jack el lado @end.JackSide.ToSpanish().</p>
+                        }
+                    }
+                    else
+                    {
+                        @if (Starters(side).Count > 1)
+                        {
+                            <label>
+                                Lanza
+                                <select @bind="selectedAthlete[side.Side]">
+                                    <option value="">Sin indicar</option>
+                                    @foreach (var m in Starters(side))
+                                    {
+                                        <option value="@m.AthleteId">@m.PlayerNumber. @m.FullName</option>
+                                    }
+                                </select>
+                            </label>
+                        }
+                        <div class="throw-buttons">
+                            <button class="btn big @Labels.Css(side.Side)" disabled="@(busy || side.ColourBallsRemaining == 0)"
+                                    @onclick="() => ThrowAsync(side.Side, BallType.Colour, ThrowResult.InPlay)">
+                                Bola en cancha
+                            </button>
+                            <button class="btn" disabled="@(busy || side.ColourBallsRemaining == 0)"
+                                    @onclick="() => ThrowAsync(side.Side, BallType.Colour, ThrowResult.Dead)">
+                                Bola fuera
+                            </button>
+                            @if (side.PenaltyBallsAvailable > 0)
+                            {
+                                <button class="btn penalty" disabled="@busy" @onclick="() => ThrowAsync(side.Side, BallType.Penalty, ThrowResult.InPlay)">
+                                    Bola de penalización (@side.PenaltyBallsAvailable)
+                                </button>
+                            }
+                        </div>
+                    }
+                </section>
+            }
+        </div>
+
+        @* --- Lanzamientos del parcial y mediciones --- *@
+        <section class="card">
+            <div class="section-header">
+                <h3>Lanzamientos del parcial</h3>
+                <button class="btn" disabled="@(busy || end.Throws.Count == 0)" @onclick="() => RunAsync(() => Api.UndoLastThrowAsync(MatchId))">Deshacer último</button>
+            </div>
+
+            @if (end.Throws.Count == 0)
+            {
+                <p class="muted">Todavía no hay lanzamientos.</p>
+            }
+            else
+            {
+                <table class="table throws-table">
+                    <thead>
+                        <tr><th>#</th><th>Lado</th><th>Bola</th><th>Jugador</th><th>Resultado</th><th>Distancia al jack (mm)</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in end.Throws)
+                        {
+                            <tr>
+                                <td>@t.Sequence</td>
+                                <td><span class="swatch @Labels.Css(t.Side)"></span> @Labels.Of(t.Side)</td>
+                                <td>@Labels.Of(t.BallType)</td>
+                                <td>@AthleteName(t.AthleteId)</td>
+                                @if (t.BallType == BallType.Jack)
+                                {
+                                    <td colspan="2" class="muted">—</td>
+                                }
+                                else if (measurements.TryGetValue(t.ThrowId, out var m))
+                                {
+                                    <td>
+                                        <select @bind="m.Result" aria-label="Resultado del lanzamiento @t.Sequence">
+                                            <option value="@ThrowResult.InPlay">@Labels.Of(ThrowResult.InPlay)</option>
+                                            <option value="@ThrowResult.Dead">@Labels.Of(ThrowResult.Dead)</option>
+                                            <option value="@ThrowResult.Retracted">@Labels.Of(ThrowResult.Retracted)</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="number" min="0" max="20000" inputmode="numeric" class="distance"
+                                               @bind="m.DistanceMm" disabled="@(m.Result != ThrowResult.InPlay)"
+                                               aria-label="Distancia del lanzamiento @t.Sequence en milímetros" />
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        @* --- Cierre del parcial --- *@
+        <section class="card">
+            <h3>Cerrar @Labels.EndName(end.EndNumber, end.IsTieBreak).ToLowerInvariant()</h3>
+            <label class="inline">
+                <input type="checkbox" @bind="manualScore" />
+                Puntaje manual del árbitro
+            </label>
+
+            @if (manualScore)
+            {
+                <div class="form-grid">
+                    <label>Puntos rojo <input type="number" min="0" max="20" @bind="manualRed" /></label>
+                    <label>Puntos azul <input type="number" min="0" max="20" @bind="manualBlue" /></label>
+                </div>
+            }
+            else
+            {
+                <p class="preview">@Preview</p>
+            }
+
+            <div class="actions">
+                <button class="btn primary big" disabled="@busy" @onclick="FinishEndAsync">Cerrar parcial</button>
+            </div>
+        </section>
+
+        @* --- Sanciones --- *@
+        <section class="card">
+            <h3>Sanciones</h3>
+            @if (end.Penalties.Count > 0)
+            {
+                <ul class="penalty-list">
+                    @foreach (var p in end.Penalties)
+                    {
+                        <li>
+                            <span class="swatch @Labels.Css(p.PenalizedSide)"></span>
+                            <strong>@Labels.Of(p.PenaltyType)</strong> al lado @p.PenalizedSide.ToSpanish()
+                            @(p.Reason is null ? "" : $"— {p.Reason}")
+                        </li>
+                    }
+                </ul>
+            }
+            <div class="form-grid">
+                <label>
+                    Lado sancionado
+                    <select @bind="penaltySide">
+                        <option value="@Side.Red">Rojo</option>
+                        <option value="@Side.Blue">Azul</option>
+                    </select>
+                </label>
+                <label>
+                    Tipo
+                    <select @bind="penaltyType">
+                        @foreach (var type in Enum.GetValues<PenaltyType>())
+                        {
+                            <option value="@type">@Labels.Of(type)</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    Motivo
+                    <input type="text" maxlength="200" @bind="penaltyReason" placeholder="Opcional" />
+                </label>
+            </div>
+            @if (penaltyType == PenaltyType.PenaltyBall)
+            {
+                <p class="muted">El lado contrario recibe una bola de penalización para este parcial.</p>
+            }
+            <div class="actions">
+                <button class="btn" disabled="@busy" @onclick="AddPenaltyAsync">Registrar sanción</button>
+            </div>
+        </section>
+        break;
+}
+
+@* ------------------------------------------------------------ Cancelación *@
+@if (state.Status is MatchStatus.Scheduled or MatchStatus.InProgress)
+{
+    <section class="danger-zone">
+        @if (confirmCancel)
+        {
+            <span>¿Cancelar el partido? Esta acción no se puede deshacer.</span>
+            <button class="btn danger" disabled="@busy" @onclick="CancelMatchAsync">Sí, cancelar</button>
+            <button class="btn" @onclick="() => confirmCancel = false">No</button>
+        }
+        else
+        {
+            <button class="btn link-danger" @onclick="() => confirmCancel = true">Cancelar partido</button>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public int MatchId { get; set; }
+
+    private MatchStateDto? state;
+    private string? error;
+    private bool busy;
+
+    // Mediciones locales del parcial en juego (se envían al cerrarlo).
+    private readonly Dictionary<int, MeasurementInput> measurements = [];
+    private int? currentEndId;
+
+    private readonly Dictionary<Side, int?> selectedAthlete = new() { [Side.Red] = null, [Side.Blue] = null };
+    private bool manualScore;
+    private int manualRed, manualBlue;
+    private Side penaltySide = Side.Red;
+    private PenaltyType penaltyType = PenaltyType.PenaltyBall;
+    private string? penaltyReason;
+    private Side tieBreakJackSide = Side.Red;
+    private bool confirmCancel;
+
+    private sealed class MeasurementInput
+    {
+        public ThrowResult Result { get; set; }
+        public int? DistanceMm { get; set; }
+    }
+
+    private static List<SideMemberDto> Starters(SideStateDto side) => side.Members.Where(m => !m.IsSubstitute).ToList();
+
+    private string AthleteName(int? athleteId) =>
+        athleteId is null ? "" : state!.Red.Members.Concat(state.Blue.Members).FirstOrDefault(m => m.AthleteId == athleteId)?.FullName ?? "";
+
+    /// <summary>Resultado previsto con las mediciones cargadas (mismo cálculo que el servidor).</summary>
+    private string Preview
+    {
+        get
+        {
+            var end = state!.CurrentEnd!;
+            if (!end.JackThrown) return "Todavía no se lanzó el jack.";
+
+            var balls = end.Throws
+                .Where(t => t.BallType != BallType.Jack && measurements.TryGetValue(t.ThrowId, out var m) && m.Result == ThrowResult.InPlay)
+                .Select(t => (t.Side, measurements[t.ThrowId].DistanceMm))
+                .ToList();
+
+            var missing = balls.Count(b => b.DistanceMm is null);
+            if (missing > 0) return $"Falta medir {missing} bola{(missing > 1 ? "s" : "")} en cancha.";
+
+            var (red, blue) = EndScoring.Calculate(balls.Select(b => new EndScoring.ScoredBall(b.Side, b.DistanceMm!.Value)));
+            return $"Resultado calculado: rojo {red} – azul {blue}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Connection.MatchUpdated += OnMatchUpdated;
+        Connection.ConnectionChanged += OnConnectionChanged;
+        await LoadAsync();
+        await Connection.JoinMatchAsync(MatchId);
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            Apply(await Api.GetMatchAsync(MatchId));
+            error = null;
+        }
+        catch (Exception ex) when (ApiCall.IsApiError(ex))
+        {
+            error = ex is ApiException { StatusCode: 404 } ? $"No existe el partido {MatchId}." : ApiCall.ErrorMessage(ex);
+        }
+    }
+
+    /// <summary>Aplica un estado nuevo conservando las mediciones que el operador está cargando.</summary>
+    private void Apply(MatchStateDto updated)
+    {
+        state = updated;
+        var end = updated.CurrentEnd;
+
+        if (end?.EndId != currentEndId)
+        {
+            measurements.Clear();
+            currentEndId = end?.EndId;
+            manualScore = false;
+            manualRed = manualBlue = 0;
+        }
+        if (end is null) return;
+
+        var balls = end.Throws.Where(t => t.BallType != BallType.Jack).ToList();
+        foreach (var id in measurements.Keys.Except(balls.Select(t => t.ThrowId)).ToList())
+            measurements.Remove(id);
+        foreach (var t in balls)
+            measurements.TryAdd(t.ThrowId, new MeasurementInput { Result = t.Result, DistanceMm = t.DistanceToJackMm });
+    }
+
+    private async Task RunAsync(Func<Task<MatchStateDto>> action)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            Apply(await action());
+        }
+        catch (Exception ex) when (ApiCall.IsApiError(ex))
+        {
+            error = ApiCall.ErrorMessage(ex);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private Task ThrowAsync(Side side, BallType type, ThrowResult result)
+    {
+        var sideState = side == Side.Red ? state!.Red : state!.Blue;
+        var starters = Starters(sideState);
+        // En individual el lanzador es siempre el único titular.
+        var athleteId = type == BallType.Jack ? null : selectedAthlete[side] ?? (starters.Count == 1 ? starters[0].AthleteId : null);
+
+        return RunAsync(() => Api.RegisterThrowAsync(MatchId, new RegisterThrowRequest
+        {
+            Side = side,
+            BallType = type,
+            Result = result,
+            AthleteId = athleteId,
+        }));
+    }
+
+    private Task FinishEndAsync()
+    {
+        var request = new FinishEndRequest
+        {
+            Measurements = measurements
+                .Select(kv => new ThrowMeasurement { ThrowId = kv.Key, Result = kv.Value.Result, DistanceToJackMm = kv.Value.DistanceMm })
+                .ToList(),
+        };
+        if (manualScore)
+        {
+            request.RedPointsOverride = manualRed;
+            request.BluePointsOverride = manualBlue;
+        }
+        return RunAsync(() => Api.FinishEndAsync(MatchId, request));
+    }
+
+    private async Task AddPenaltyAsync()
+    {
+        await RunAsync(() => Api.AddPenaltyAsync(MatchId, new AddPenaltyRequest
+        {
+            PenalizedSide = penaltySide,
+            PenaltyType = penaltyType,
+            Reason = string.IsNullOrWhiteSpace(penaltyReason) ? null : penaltyReason.Trim(),
+        }));
+        if (error is null) penaltyReason = null;
+    }
+
+    private async Task CancelMatchAsync()
+    {
+        await RunAsync(() => Api.CancelMatchAsync(MatchId));
+        confirmCancel = false;
+    }
+
+    private Task OnMatchUpdated(MatchStateDto updated) =>
+        updated.MatchId != MatchId ? Task.CompletedTask : InvokeAsync(() =>
+        {
+            Apply(updated);
+            StateHasChanged();
+        });
+
+    private Task OnConnectionChanged(bool connected) => InvokeAsync(async () =>
+    {
+        if (connected) await LoadAsync();
+        StateHasChanged();
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        Connection.MatchUpdated -= OnMatchUpdated;
+        Connection.ConnectionChanged -= OnConnectionChanged;
+        try { await Connection.LeaveMatchAsync(MatchId); }
+        catch { /* la conexión puede estar cerrándose junto con el circuito */ }
+    }
+}
