@@ -1,4 +1,5 @@
--- Marcador total por partido: suma de los parciales finalizados.
+-- Marcador total por partido: suma de los parciales regulares finalizados.
+-- Los parciales de desempate solo definen al ganador y se informan aparte.
 -- Es lo que consulta el servidor para mostrar en el marcador.
 CREATE VIEW [dbo].[vw_MatchScores]
 AS
@@ -8,9 +9,11 @@ SELECT
     d.[Code]                                   AS [DivisionCode],
     red.[DisplayName]                          AS [RedName],
     blue.[DisplayName]                         AS [BlueName],
-    ISNULL(SUM(CASE WHEN e.[Status] = 'Finished' THEN e.[RedPoints]  END), 0) AS [RedScore],
-    ISNULL(SUM(CASE WHEN e.[Status] = 'Finished' THEN e.[BluePoints] END), 0) AS [BlueScore],
-    COUNT(CASE WHEN e.[Status] = 'Finished' THEN 1 END)                       AS [EndsPlayed],
+    ISNULL(SUM(CASE WHEN e.[Status] = 'Finished' AND e.[IsTieBreak] = 0 THEN e.[RedPoints]  END), 0) AS [RedScore],
+    ISNULL(SUM(CASE WHEN e.[Status] = 'Finished' AND e.[IsTieBreak] = 0 THEN e.[BluePoints] END), 0) AS [BlueScore],
+    ISNULL(SUM(CASE WHEN e.[Status] = 'Finished' AND e.[IsTieBreak] = 1 THEN e.[RedPoints]  END), 0) AS [RedTieBreakScore],
+    ISNULL(SUM(CASE WHEN e.[Status] = 'Finished' AND e.[IsTieBreak] = 1 THEN e.[BluePoints] END), 0) AS [BlueTieBreakScore],
+    COUNT(CASE WHEN e.[Status] = 'Finished' AND e.[IsTieBreak] = 0 THEN 1 END)                       AS [EndsPlayed],
     d.[NumberOfEnds],
     m.[WinnerSide]
 FROM [dbo].[Matches] AS m

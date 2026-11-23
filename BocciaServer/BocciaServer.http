@@ -1,6 +1,76 @@
-@BocciaServer_HostAddress = http://localhost:5123
+# Pruebas manuales de la API (extensión REST Client de VS Code).
+@host = http://localhost:5123
 
-GET {{BocciaServer_HostAddress}}/weatherforecast/
-Accept: application/json
+### Divisiones disponibles
+GET {{host}}/api/divisions
 
-###
+### Crear deportista
+POST {{host}}/api/athletes
+Content-Type: application/json
+
+{ "firstName": "Ana", "lastName": "Pérez", "classification": "BC2", "club": "Club Norte" }
+
+### Crear partido individual BC2
+POST {{host}}/api/matches
+Content-Type: application/json
+
+{
+  "divisionCode": "BC2",
+  "court": "1",
+  "red":  { "displayName": "Ana Pérez" },
+  "blue": { "displayName": "Luis Gómez" }
+}
+
+### Listar partidos en juego
+GET {{host}}/api/matches?status=InProgress
+
+### Estado de un partido
+@matchId = 1
+GET {{host}}/api/matches/{{matchId}}
+
+### Iniciar partido (abre el parcial 1, rojo lanza el jack)
+POST {{host}}/api/matches/{{matchId}}/start
+
+### Lanzar el jack
+POST {{host}}/api/matches/{{matchId}}/throws
+Content-Type: application/json
+
+{ "side": "Red", "ballType": "Jack" }
+
+### Lanzar bola de color
+POST {{host}}/api/matches/{{matchId}}/throws
+Content-Type: application/json
+
+{ "side": "Red", "ballType": "Colour" }
+
+### Deshacer el último lanzamiento
+DELETE {{host}}/api/matches/{{matchId}}/throws/last
+
+### Sanción: bola de penalización para el rival
+POST {{host}}/api/matches/{{matchId}}/penalties
+Content-Type: application/json
+
+{ "penalizedSide": "Blue", "penaltyType": "PenaltyBall", "reason": "Cruzó la línea de lanzamiento" }
+
+### Cerrar el parcial con las distancias medidas (mm)
+POST {{host}}/api/matches/{{matchId}}/ends/current/finish
+Content-Type: application/json
+
+{
+  "measurements": [
+    { "throwId": 2, "result": "InPlay", "distanceToJackMm": 120 },
+    { "throwId": 3, "result": "Dead" }
+  ]
+}
+
+### Cerrar el parcial con puntaje manual del árbitro
+POST {{host}}/api/matches/{{matchId}}/ends/current/finish
+Content-Type: application/json
+
+{ "redPointsOverride": 2, "bluePointsOverride": 0 }
+
+### Iniciar desempate
+POST {{host}}/api/matches/{{matchId}}/tiebreak
+Content-Type: application/json
+
+{ "jackSide": "Blue" }

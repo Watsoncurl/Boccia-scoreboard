@@ -38,3 +38,39 @@ The Display Application receives updates from the server using SignalR and displ
 
 At the end of the game, the server stores the result in the database and notifies both applications.
 
+
+## Current Implementation
+
+| Project | Description |
+|---|---|
+| `BocciaServer` | ASP.NET Core API + SignalR hub (`/hubs/scoreboard`). Game rules, scoring and persistence (EF Core, SQL Server). |
+| `BocciaShared` | DTOs, enums and SignalR hub contract shared by the server and the Blazor apps. |
+| `BocciaControlApp` | Blazor web app to operate a match (referee/table official). |
+| `BocciaViewApp` | Blazor web app that shows the live scoreboard. |
+| `BocciaDatabase` | SQL Server database project (SDK-style, builds on Linux). |
+| `BocciaServer.Tests` | xUnit tests: scoring rules and full match flow (SQLite in-memory). |
+
+All apps listen on every network interface so any device on the LAN can open them:
+server `:5123`, control app `:5201`, scoreboard `:5202`.
+
+### Running locally
+
+```bash
+# 1. SQL Server (e.g. Docker) and deploy the schema
+dotnet build BocciaDatabase          # produces BocciaDatabase/bin/Debug/BocciaDatabase.dacpac
+# deploy the .dacpac with SqlPackage or the SQL Database Projects extension
+
+# 2. Connection string (password kept out of the repo)
+cd BocciaServer
+dotnet user-secrets set "ConnectionStrings:BocciaDb" "Server=localhost,1433;Database=BocciaDb;User Id=sa;Password=<password>;TrustServerCertificate=True;Encrypt=False"
+
+# 3. Run
+dotnet run --project BocciaServer
+dotnet run --project BocciaControlApp
+dotnet run --project BocciaViewApp
+
+# Tests
+dotnet test
+```
+
+See `BocciaServer/BocciaServer.http` for example API calls.
