@@ -67,16 +67,19 @@ dotnet run --project BocciaViewApp
 Then open the control app at `http://<host>:5201` and the scoreboard at `http://<host>:5202`.
 If the apps run on another machine than the server, set `BocciaServer:BaseUrl` in their `appsettings.json`.
 
-### Running locally with SQL Server
+### Running with SQL Server
+
+Requires a reachable SQL Server (for example in Docker on `localhost,1433`).
 
 ```bash
-# 1. SQL Server (e.g. Docker) and deploy the schema
-dotnet build BocciaDatabase          # produces BocciaDatabase/bin/Debug/BocciaDatabase.dacpac
-# deploy the .dacpac with SqlPackage or the SQL Database Projects extension
+# 1. Connection string, stored in the server's user-secrets (outside the repo)
+dotnet user-secrets set --project BocciaServer "ConnectionStrings:BocciaDb" \
+  "Server=localhost,1433;Database=BocciaDb;User Id=sa;Password=<password>;TrustServerCertificate=True;Encrypt=False"
 
-# 2. Connection string (password kept out of the repo)
-cd BocciaServer
-dotnet user-secrets set "ConnectionStrings:BocciaDb" "Server=localhost,1433;Database=BocciaDb;User Id=sa;Password=<password>;TrustServerCertificate=True;Encrypt=False"
+# 2. Create or update the schema (tables, view and divisions).
+#    Uses SqlPackage from the local tool manifest and the same user-secrets.
+#    It can be run again after schema changes; it refuses changes that would lose data.
+./scripts/deploy-database.sh
 
 # 3. Run
 dotnet run --project BocciaServer
